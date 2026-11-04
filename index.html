@@ -94,7 +94,7 @@ function onOpenCvReady() {
 }
 
 inputElement.addEventListener('change', (e) => {
-    imgElement.src = URL.createObjectURL(e.target.files);
+    imgElement.src = URL.createObjectURL(e.target.files[0]);
 }, false);
 
 imgElement.onload = function() {
@@ -121,7 +121,7 @@ function drawStaffAndNotes() {
         
         ctx.beginPath();
         ctx.arc(note.x, yPos, 8, 0, 2 * Math.PI);
-        ctx.fillStyle = "#ea580c"; // 吹奏楽イメージのオレンジ
+        ctx.fillStyle = "#ea580c"; 
         ctx.fill();
         ctx.lineWidth = 2;
         ctx.strokeStyle = "#c2410c";
@@ -134,7 +134,6 @@ function drawStaffAndNotes() {
     });
 }
 
-// --- ① 本格画像スキャンロジック ---
 btnAnalyze.addEventListener('click', () => {
     if (!cvReady) return;
     statusDiv.innerText = "ステータス: AIが五線譜を高速スキャン中...";
@@ -175,7 +174,6 @@ btnAnalyze.addEventListener('click', () => {
         src.delete(); dst.delete(); gray.delete(); edges.delete(); lines.delete();
         baseImgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-        // 左から右への音符マッピング初期化
         parsedNotes = [];
         let startX = 80;
         for (let i = 0; i < 8; i++) {
@@ -193,7 +191,6 @@ btnAnalyze.addEventListener('click', () => {
     }, 100);
 });
 
-// --- タップで音符を修正する機能 ---
 canvas.addEventListener('click', (e) => {
     if (parsedNotes.length === 0) return;
 
@@ -218,36 +215,37 @@ canvas.addEventListener('click', (e) => {
         drawStaffAndNotes();
         statusDiv.innerText = `修正: 音符を「${clickedNote.label}」に直しました。`;
         
-        // 修正した楽器の音を単発チェック
         playWindEnsembleTone(NOTE_FREQS[clickedNote.label], 0.5);
     }
 });
 
-// --- ② 吹奏楽（管楽器アンサンブル）音源エンジン (Web Audio API) ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playWindEnsembleTone(freq, duration, startTime = audioCtx.currentTime) {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
-    // メインの音量とまとめるミキサーノード
     const mixer = audioCtx.createGain();
-    
-    // まろやかさを出すためのフィルター（ホルン・低音成分用）
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(freq * 3, startTime);
 
-    // 1. トランペット成分（パキッとしたパリ吹きの音）
     const trumpet = audioCtx.createOscillator();
     const trumpetGain = audioCtx.createGain();
     trumpet.type = 'sawtooth';
     trumpet.frequency.setValueAtTime(freq, startTime);
-    // わずかにピッチを揺らして、生楽器の人間の息感を出す（デチューン）
     trumpet.detune.setValueAtTime(4, startTime); 
     trumpetGain.gain.setValueAtTime(0.18, startTime);
 
-    // 2. サックス・木管成分（リード楽器の太い芯）
     const sax = audioCtx.createOscillator();
     const saxGain = audioCtx.createGain();
     sax.type = 'square';
     sax.frequency.setValueAtTime(freq, startTime);
+    sax.detune.setValueAtTime(-4, startTime); 
+    saxGain.gain.setValueAtTime(0.08, startTime);
+
+    const horn = audioCtx.createOscillator();
+    const hornGain = audioCtx.createGain();
+    horn.type = 'triangle';
+    horn.frequency.setValueAtTime(freq * 0.5, startTime); 
+    hornGain.gain.setValueAtTime(0.25, startTime);
+
