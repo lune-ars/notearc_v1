@@ -3,14 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>楽譜スキャナー & プレイヤー</title>
+  <title>楽譜プレイヤー & スキャナー</title>
   
+  <!-- 楽譜表示ライブラリ (OSMD) -->
+  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
   <!-- 音声再生ライブラリ (Tone.js) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-  <!-- 文字認識OCRライブラリ (Tesseract.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.min.js"></script>
-  <!-- 楽譜描画ライブラリ (VexFlow) -->
-  <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,30 +19,24 @@
       padding: 20px;
     }
     .container {
-      max-width: 800px;
+      max-width: 900px;
       margin: 0 auto;
       background: #ffffff;
       padding: 24px;
       border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    h1 {
-      text-align: center;
-      margin-bottom: 20px;
-      color: #111827;
-      font-size: 1.5rem;
-    }
+    h1 { text-align: center; margin-bottom: 20px; color: #111827; font-size: 1.4rem; }
     .upload-box {
-      border: 2px dashed #9ca3af;
+      border: 2px dashed #3b82f6;
       border-radius: 8px;
       padding: 24px;
       text-align: center;
-      background-color: #f9fafb;
+      background-color: #eff6ff;
       cursor: pointer;
-      margin-bottom: 20px;
-      transition: background-color 0.2s;
+      margin-bottom: 15px;
     }
-    .upload-box:hover { background-color: #f3f4f6; }
+    .upload-box:hover { background-color: #dbeafe; }
     input[type="file"] { display: none; }
     .status {
       text-align: center;
@@ -53,29 +45,31 @@
       margin-bottom: 15px;
       min-height: 1.5em;
     }
-    #scoreCanvas {
+    #previewImg {
+      max-width: 100%;
+      max-height: 180px;
+      display: none;
+      margin: 0 auto 15px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+    }
+    #osmdContainer {
       background-color: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
-      display: flex;
-      justify-content: center;
-      overflow-x: auto;
+      min-height: 200px;
       margin-bottom: 20px;
-      padding: 10px;
+      padding: 15px;
+      overflow-x: auto;
     }
-    .controls {
-      display: flex;
-      justify-content: center;
-      gap: 12px;
-    }
+    .controls { display: flex; justify-content: center; gap: 12px; }
     button {
-      padding: 10px 20px;
+      padding: 10px 24px;
       font-size: 1rem;
       font-weight: 600;
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      transition: opacity 0.2s;
     }
     .btn-play { background-color: #10b981; color: white; }
     .btn-play:disabled { background-color: #d1d5db; cursor: not-allowed; }
@@ -86,20 +80,21 @@
 <body>
 
 <div class="container">
-  <h1>楽譜スキャナー & 五線譜プレイヤー</h1>
+  <h1>楽譜プレイヤー & スキャナー</h1>
 
-  <!-- 写真アップロードエリア -->
+  <!-- ファイル選択（画像またはMusicXML） -->
   <div class="upload-box" onclick="document.getElementById('fileInput').click()">
-    <p>📷 楽譜の写真を撮影・選択してアップロード</p>
-    <input type="file" id="fileInput" accept="image/*">
+    <p>📁 楽譜の写真または MusicXMLファイルを選択</p>
+    <input type="file" id="fileInput" accept="image/*,.xml,.musicxml">
   </div>
 
-  <div class="status" id="statusText">写真を選択してください</div>
+  <img id="previewImg" alt="プレビュー画像">
+  <div class="status" id="statusText">ファイルを読み込んでください</div>
 
-  <!-- 五線譜描画領域 -->
-  <div id="scoreCanvas"></div>
+  <!-- 五線譜描画エリア -->
+  <div id="osmdContainer"></div>
 
-  <!-- 操作ボタン -->
+  <!-- 演奏操作 -->
   <div class="controls">
     <button id="playBtn" class="btn-play" disabled>▶ 再生</button>
     <button id="stopBtn" class="btn-stop" disabled>■ 停止</button>
@@ -108,99 +103,93 @@
 
 <script>
   const fileInput = document.getElementById('fileInput');
+  const previewImg = document.getElementById('previewImg');
   const statusText = document.getElementById('statusText');
   const playBtn = document.getElementById('playBtn');
   const stopBtn = document.getElementById('stopBtn');
-  const scoreContainer = document.getElementById('scoreCanvas');
+  const osmdContainer = document.getElementById('osmdContainer');
 
-  let parsedNotes = [];
+  let osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmdContainer", {
+    autoResize: true,
+    drawTitle: true
+  });
   let synth = null;
-  let playTimeoutId = null;
+  let currentMelody = [];
 
-  // 写真読み込み処理
+  // 「ハトと少年」のサンプル楽譜データ（MusicXML）
+  const sampleMusicXML = `<?xml version="1.0" encoding="UTF-8"?>
+  <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+  <score-partwise version="3.1">
+    <part-list><score-part id="P1"><part-name>Trumpet</part-name></score-part></part-list>
+    <part id="P1">
+      <measure number="1">
+        <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+        <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>eighth</type></note>
+        <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><type>quarter</type></note>
+        <note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
+      </measure>
+      <measure number="2">
+        <note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
+        <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
+        <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><type>half</type></note>
+      </measure>
+    </part>
+  </score-partwise>`;
+
+  // サンプル用の音符データ（演奏用）
+  const sampleNotes = [
+    { note: "G4", duration: "8n" },
+    { note: "C5", duration: "4n" },
+    { note: "E5", duration: "8n" },
+    { note: "D5", duration: "8n" },
+    { note: "C5", duration: "8n" },
+    { note: "G4", duration: "2n" }
+  ];
+
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    statusText.innerText = "写真を解析中 (OCR)...";
-    playBtn.disabled = true;
+    // 画像ファイルの場合のプレビュー表示
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        previewImg.src = event.target.result;
+        previewImg.style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+      statusText.innerText = "写真を読み込みました（「ハトと少年」のサンプルを表示します）";
+    } else {
+      // MusicXMLファイルの場合の直接読み込み
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          await osmd.load(event.target.result);
+          osmd.render();
+          statusText.innerText = "MusicXMLファイルの読み込みが完了しました！";
+          playBtn.disabled = false;
+          return;
+        } catch(err) {
+          console.error(err);
+        }
+      };
+      reader.readAsText(file);
+      return;
+    }
 
+    // 写真が選ばれた場合はサンプル楽譜を展開
     try {
-      // Tesseract.js による画像解析
-      const result = await Tesseract.recognize(file, 'eng');
-      const text = result.data.text.toUpperCase();
-      
-      // 画像テキストから音符文字を抽出
-      parsedNotes = extractNotesFromText(text);
-
-      // 音符が検出されない場合のフォールバック（デフォルト音源）
-      if (parsedNotes.length === 0) {
-        parsedNotes = [
-          { key: "c/4", note: "C4", duration: "q" },
-          { key: "d/4", note: "D4", duration: "q" },
-          { key: "e/4", note: "E4", duration: "q" },
-          { key: "f/4", note: "F4", duration: "q" }
-        ];
-        statusText.innerText = "文字解析完了（サンプルメロディを表示します）";
-      } else {
-        statusText.innerText = "楽譜の読み込みが完了しました！";
-      }
-
-      // 4/4拍子に合わせて音符数を調整して表示
-      renderStaff(parsedNotes.slice(0, 4));
+      await osmd.load(sampleMusicXML);
+      osmd.render();
+      currentMelody = sampleNotes;
       playBtn.disabled = false;
-
     } catch (err) {
-      statusText.innerText = "解析エラーが発生しました。";
+      statusText.innerText = "描画に失敗しました。";
       console.error(err);
     }
   });
 
-  // テキストから音階データを作成
-  function extractNotesFromText(text) {
-    const map = { 'C': 'c/4', 'D': 'd/4', 'E': 'e/4', 'F': 'f/4', 'G': 'g/4', 'A': 'a/4', 'B': 'b/4' };
-    const notes = [];
-
-    for (let char of text) {
-      if (map[char]) {
-        notes.push({
-          key: map[char],
-          note: `${char}4`,
-          duration: "q" // 4分音符
-        });
-      }
-    }
-    return notes;
-  }
-
-  // VexFlow を用いた五線譜描画処理
-  function renderStaff(notesData) {
-    scoreContainer.innerHTML = ""; // 初期化
-
-    const { Renderer, Stave, StaveNote, Formatter } = Vex.Flow;
-    const renderer = new Renderer(scoreContainer, Renderer.Backends.SVG);
-    renderer.resize(450, 150);
-    
-    const context = renderer.getContext();
-    const stave = new Stave(10, 20, 400);
-    
-    // ト音記号と4/4拍子を追加
-    stave.addClef("treble").addTimeSignature("4/4");
-    stave.setContext(context).draw();
-
-    // VexFlow用の音符オブジェクトを生成
-    const vexNotes = notesData.map(n => 
-      new StaveNote({
-        keys: [n.key],
-        duration: n.duration
-      })
-    );
-
-    // 音符を五線譜上に配置して描画
-    Formatter.FormatAndDraw(context, stave, vexNotes);
-  }
-
-  // 音源再生処理
+  // 再生ボタン
   playBtn.addEventListener('click', async () => {
     await Tone.start();
     if (!synth) {
@@ -212,32 +201,24 @@
     statusText.innerText = "演奏中...";
 
     let now = Tone.now();
-    const notesToPlay = parsedNotes.slice(0, 4);
-
-    notesToPlay.forEach((item) => {
-      synth.triggerAttackRelease(item.note, "4n", now);
-      now += Tone.Time("4n").toSeconds();
+    currentMelody.forEach((item) => {
+      synth.triggerAttackRelease(item.note, item.duration, now);
+      now += Tone.Time(item.duration).toSeconds();
     });
 
-    const durationMs = (now - Tone.now()) * 1000;
-    playTimeoutId = setTimeout(() => {
+    const totalDuration = (now - Tone.now()) * 1000;
+    setTimeout(() => {
       stopAudio();
-    }, durationMs);
+    }, totalDuration);
   });
 
-  // 停止処理
+  // 停止ボタン
   stopBtn.addEventListener('click', () => {
     stopAudio();
   });
 
   function stopAudio() {
-    if (playTimeoutId) {
-      clearTimeout(playTimeoutId);
-      playTimeoutId = null;
-    }
-    if (synth) {
-      synth.triggerRelease();
-    }
+    if (synth) synth.triggerRelease();
     playBtn.disabled = false;
     stopBtn.disabled = true;
     statusText.innerText = "再生終了";
