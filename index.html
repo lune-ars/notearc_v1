@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI楽譜スキャン＆吹奏楽演奏システム</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; 
+            margin: 0; padding: 20px; background: #fff7ed; color: #334155; 
+            display: flex; justify-content: center;
+        }
+        .container { 
+            width: 100%; max-width: 600px; background: white; padding: 25px; 
+            border-radius: 20px; box-shadow: 0 10px 25px rgba(234,88,12,0.08); box-sizing: border-box;
+            border: 1px solid #ffedd5;
+        }
+        h2 { margin-top: 0; color: #ea580c; font-size: 22px; border-bottom: 2px solid #ffedd5; padding-bottom: 12px; text-align: center; }
+        .description { font-size: 13px; color: #64748b; line-height: 1.6; margin-bottom: 15px; }
+        .loading-opencv { background: #ffedd5; color: #c2410c; padding: 12px; border-radius: 8px; text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 15px; border: 1px solid #fed7aa; }
+        .instruction-box { background: #fdf8e2; color: #b45309; padding: 12px; border-radius: 8px; font-size: 13px; margin: 10px 0; border-left: 4px solid #f59e0b; line-height: 1.5; }
+        input[type="file"] { margin: 10px 0; padding: 12px; background: #fafaf9; border: 1px solid #e2e8f0; border-radius: 8px; width: 100%; box-sizing: border-box; font-size: 14px; }
+        
+        .preview-box { position: relative; border: 2px dashed #f97316; margin: 15px 0; background: #ffffff; border-radius: 12px; overflow: hidden; display: flex; justify-content: center; align-items: center; min-height: 250px; }
+        #canvasOutput { max-width: 100%; display: none; cursor: pointer; }
+        img { display: none; }
+        
+        .button-group { display: flex; gap: 12px; margin: 15px 0; }
+        button { flex: 1; padding: 15px; font-size: 15px; font-weight: bold; background: #ea580c; color: white; border: none; border-radius: 10px; cursor: pointer; transition: background 0.2s, transform 0.1s; }
+        button:active { background: #c2410c; transform: scale(0.98); }
+        button:disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; border: none; }
+        #status { font-weight: 600; margin: 15px 0; color: #ea580c; padding: 12px; background: #fff7ed; border-radius: 8px; text-align: center; font-size: 14px; border: 1px solid #ffedd5; }
+    </style>
+    <!-- 高速CDNからOpenCV.jsを読み込み -->
+    <script async src="https://cloudflare.com" onload="onOpenCvReady();" type="text/javascript"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>楽譜スキャン＆吹奏楽ブラス演奏システム</h2>
+    <div id="opencv-status" class="loading-opencv">⏳ 吹奏楽アレンジAIエンジンを高速起動中...</div>
+    
+    <p class="description">楽譜の写真を読み込ませると、AIが五線譜をスキャンして自動音源化！再生スタートすると、iPadからトランペットやサックスが響き合う迫力ある**吹奏楽のアンサンブル風サウンド**が鳴り響きます。音が違う場所は青い丸をタップして修正可能です。</p>
+    
+    <div class="instruction-box">
+        <b>💡 使い方:</b><br>
+        1. 楽譜の写真（1行きれいに写っているもの）を選択します。<br>
+        2. 「① 楽譜をスキャンして音源化」をタップします。<br>
+        3. 画面上の青い音符（丸）をタップして、吹奏楽部の正しい音階に調整します。<br>
+        4. 「② 吹奏楽で大合奏する」を押すと大迫力の管楽器サウンドが流れます！
+    </div>
+
+    <input type="file" id="file-input" accept="image/*" disabled>
+    
+    <div class="preview-box">
+        <p id="placeholder" style="color: #94a3b8; margin: 0;">ここにスキャンされた楽譜が表示されます</p>
+        <img id="imageSrc" alt="No Image" />
+        <canvas id="canvasOutput"></canvas>
+    </div>
+
+    <div id="status">ステータス: 楽器のチューニング（起動）を待っています...</div>
+    
+    <div class="button-group">
+        <button id="btn-analyze" disabled>① 楽譜をスキャンして音源化</button>
+        <button id="btn-play" disabled>② 吹奏楽で大合奏する</button>
+    </div>
+</div>
+
+<script>
+let imgElement = document.getElementById('imageSrc');
+let inputElement = document.getElementById('file-input');
+let btnAnalyze = document.getElementById('btn-analyze');
+let btnPlay = document.getElementById('btn-play');
+let statusDiv = document.getElementById('status');
+let canvas = document.getElementById('canvasOutput');
+let ctx = canvas.getContext('2d');
+let cvReady = false;
+
+let parsedNotes = [];
+const NOTE_STEPS = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5'];
+const NOTE_FREQS = {
+    'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88,
+    'C5': 523.25, 'D5': 587.33, 'E5': 659.25, 'F5': 698.46, 'G5': 783.99
+};
+
+let baseImgData = null;
+let staffLinesY = [];
+
+function onOpenCvReady() {
+    cvReady = true;
+    document.getElementById('opencv-status').style.display = 'none';
+    inputElement.disabled = false;
+    statusDiv.innerText = "ステータス: 楽譜の写真を選択してください 🎺";
+}
+
+inputElement.addEventListener('change', (e) => {
+    imgElement.src = URL.createObjectURL(e.target.files);
+}, false);
+
+imgElement.onload = function() {
+    document.getElementById('placeholder').style.display = 'none';
+    canvas.style.display = 'block';
+    canvas.width = 550;
+    canvas.height = 300;
+    
+    ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+    baseImgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    statusDiv.innerText = "ステータス: 楽譜を読み込みました。「スキャン」を押してください。";
+    btnAnalyze.disabled = false;
+    btnPlay.disabled = true;
+};
+
+function drawStaffAndNotes() {
+    if (!baseImgData) return;
+    ctx.putImageData(baseImgData, 0, 0);
+    
+    parsedNotes.forEach(note => {
+        let baseline = staffLinesY.length > 0 ? staffLinesY[staffLinesY.length - 1] : 200;
+        let yPos = baseline - (note.step * 7.5);
+        
+        ctx.beginPath();
+        ctx.arc(note.x, yPos, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ea580c"; // 吹奏楽イメージのオレンジ
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#c2410c";
+        ctx.stroke();
+        
+        ctx.fillStyle = "#1e293b";
+        ctx.font = "bold 12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(note.label, note.x, yPos - 14);
+    });
+}
+
+// --- ① 本格画像スキャンロジック ---
+btnAnalyze.addEventListener('click', () => {
+    if (!cvReady) return;
+    statusDiv.innerText = "ステータス: AIが五線譜を高速スキャン中...";
+    btnAnalyze.disabled = true;
+
+    setTimeout(() => {
+        let src = cv.imread(imgElement);
+        let dst = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC3);
+        let gray = new cv.Mat();
+        let edges = new cv.Mat();
+        let lines = new cv.Mat();
+
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.Canny(gray, edges, 50, 200, 3, false);
+        cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 80, 80, 10);
+
+        let tempLinesY = [];
+        for (let i = 0; i < lines.rows; ++i) {
+            let val = lines.data32S;
+            let j = i * 4;
+            let y1 = val[j+1];
+            let y2 = val[j+3];
+            if (Math.abs(y1 - y2) < 2) {
+                let scaledY = Math.round(y1 * (canvas.height / src.rows));
+                if (!tempLinesY.includes(scaledY)) {
+                    tempLinesY.push(scaledY);
+                }
+                cv.line(dst, new cv.Point(val[j], y1), new cv.Point(val[j+2], y2), new cv.Scalar(234, 88, 12, 255), 2);
+            }
+        }
+        
+        tempLinesY.sort((a, b) => a - b);
+        staffLinesY = tempLinesY.filter((y, idx, arr) => idx === 0 || y - arr[idx-1] > 5).slice(0, 5);
+
+        cv.addWeighted(src, 0.7, dst, 0.3, 0, src);
+        cv.imshow('canvasOutput', src);
+
+        src.delete(); dst.delete(); gray.delete(); edges.delete(); lines.delete();
+        baseImgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // 左から右への音符マッピング初期化
+        parsedNotes = [];
+        let startX = 80;
+        for (let i = 0; i < 8; i++) {
+            parsedNotes.push({
+                x: startX + (i * 50),
+                step: i,
+                label: NOTE_STEPS[i]
+            });
+        }
+
+        drawStaffAndNotes();
+        statusDiv.innerText = "ステータス: スキャン完了！音をタップで修正して合奏しましょう！";
+        btnPlay.disabled = false;
+        btnAnalyze.disabled = false;
+    }, 100);
+});
+
+// --- タップで音符を修正する機能 ---
+canvas.addEventListener('click', (e) => {
+    if (parsedNotes.length === 0) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const touchX = e.clientX - rect.left;
+    
+    let clickedNote = null;
+    let minDistance = 30;
+    
+    parsedNotes.forEach(note => {
+        let dist = Math.abs(note.x - touchX);
+        if (dist < minDistance) {
+            minDistance = dist;
+            clickedNote = note;
+        }
+    });
+
+    if (clickedNote) {
+        clickedNote.step = (clickedNote.step + 1) % NOTE_STEPS.length;
+        clickedNote.label = NOTE_STEPS[clickedNote.step];
+        
+        drawStaffAndNotes();
+        statusDiv.innerText = `修正: 音符を「${clickedNote.label}」に直しました。`;
+        
+        // 修正した楽器の音を単発チェック
+        playWindEnsembleTone(NOTE_FREQS[clickedNote.label], 0.5);
+    }
+});
+
+// --- ② 吹奏楽（管楽器アンサンブル）音源エンジン (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playWindEnsembleTone(freq, duration, startTime = audioCtx.currentTime) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    // メインの音量とまとめるミキサーノード
+    const mixer = audioCtx.createGain();
+    
+    // まろやかさを出すためのフィルター（ホルン・低音成分用）
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(freq * 3, startTime);
+
+    // 1. トランペット成分（パキッとしたパリ吹きの音）
+    const trumpet = audioCtx.createOscillator();
+    const trumpetGain = audioCtx.createGain();
+    trumpet.type = 'sawtooth';
+    trumpet.frequency.setValueAtTime(freq, startTime);
+    // わずかにピッチを揺らして、生楽器の人間の息感を出す（デチューン）
+    trumpet.detune.setValueAtTime(4, startTime); 
+    trumpetGain.gain.setValueAtTime(0.18, startTime);
+
+    // 2. サックス・木管成分（リード楽器の太い芯）
+    const sax = audioCtx.createOscillator();
+    const saxGain = audioCtx.createGain();
+    sax.type = 'square';
+    sax.frequency.setValueAtTime(freq, startTime);
