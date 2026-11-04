@@ -1,9 +1,0 @@
-from fastapi import FastAPI, UploadFile, File
-
-app = FastAPI()
-
-@app.post("/upload-score/")
-async def upload_score(file: UploadFile = File(...)):
-    # ここに将来的に写真を受け取って解析する処理を書きます
-    filename = file.filename
-    return {"message": f"ファイル '{filename}' を受け取りました！", "status": "解析準備中"}
