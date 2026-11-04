@@ -42,6 +42,7 @@
       background-color: #f9fafb;
       cursor: pointer;
       margin-bottom: 20px;
+      transition: background-color 0.2s;
     }
     .upload-box:hover { background-color: #f3f4f6; }
     input[type="file"] { display: none; }
@@ -74,6 +75,7 @@
       border: none;
       border-radius: 6px;
       cursor: pointer;
+      transition: opacity 0.2s;
     }
     .btn-play { background-color: #10b981; color: white; }
     .btn-play:disabled { background-color: #d1d5db; cursor: not-allowed; }
@@ -113,6 +115,7 @@
 
   let parsedNotes = [];
   let synth = null;
+  let playTimeoutId = null;
 
   // 写真読み込み処理
   fileInput.addEventListener('change', async (e) => {
@@ -130,22 +133,21 @@
       // 画像テキストから音符文字を抽出
       parsedNotes = extractNotesFromText(text);
 
-      // 音符が検出されない場合のフォールバック（サンプル音源）
+      // 音符が検出されない場合のフォールバック（デフォルト音源）
       if (parsedNotes.length === 0) {
         parsedNotes = [
           { key: "c/4", note: "C4", duration: "q" },
           { key: "d/4", note: "D4", duration: "q" },
           { key: "e/4", note: "E4", duration: "q" },
-          { key: "f/4", note: "F4", duration: "q" },
-          { key: "g/4", note: "G4", duration: "h" }
+          { key: "f/4", note: "F4", duration: "q" }
         ];
         statusText.innerText = "文字解析完了（サンプルメロディを表示します）";
       } else {
         statusText.innerText = "楽譜の読み込みが完了しました！";
       }
 
-      // 五線譜を描画
-      renderStaff(parsedNotes);
+      // 4/4拍子に合わせて音符数を調整して表示
+      renderStaff(parsedNotes.slice(0, 4));
       playBtn.disabled = false;
 
     } catch (err) {
@@ -177,10 +179,10 @@
 
     const { Renderer, Stave, StaveNote, Formatter } = Vex.Flow;
     const renderer = new Renderer(scoreContainer, Renderer.Backends.SVG);
-    renderer.resize(500, 150);
+    renderer.resize(450, 150);
     
     const context = renderer.getContext();
-    const stave = new Stave(10, 20, 480);
+    const stave = new Stave(10, 20, 400);
     
     // ト音記号と4/4拍子を追加
     stave.addClef("treble").addTimeSignature("4/4");
@@ -210,14 +212,15 @@
     statusText.innerText = "演奏中...";
 
     let now = Tone.now();
-    parsedNotes.forEach((item) => {
-      // 4分音符("q")を "4n" としてTone.jsで鳴らす
+    const notesToPlay = parsedNotes.slice(0, 4);
+
+    notesToPlay.forEach((item) => {
       synth.triggerAttackRelease(item.note, "4n", now);
       now += Tone.Time("4n").toSeconds();
     });
 
     const durationMs = (now - Tone.now()) * 1000;
-    setTimeout(() => {
+    playTimeoutId = setTimeout(() => {
       stopAudio();
     }, durationMs);
   });
@@ -228,6 +231,13 @@
   });
 
   function stopAudio() {
+    if (playTimeoutId) {
+      clearTimeout(playTimeoutId);
+      playTimeoutId = null;
+    }
+    if (synth) {
+      synth.triggerRelease();
+    }
     playBtn.disabled = false;
     stopBtn.disabled = true;
     statusText.innerText = "再生終了";
