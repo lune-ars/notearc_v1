@@ -3,183 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>楽譜読み込み＆演奏プレイヤー</title>
+  <title>楽譜スキャナー & プレイヤー</title>
+  
+  <!-- 音声再生ライブラリ (Tone.js) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- 文字認識OCRライブラリ (Tesseract.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.min.js"></script>
+  <!-- 楽譜描画ライブラリ (VexFlow) -->
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #f0f2f5;
-      color: #333;
-      display: flex;
-      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f3f4f6;
+      color: #1f2937;
       padding: 20px;
     }
     .container {
-      background: white;
-      max-width: 600px;
-      width: 100%;
-      padding: 30px;
+      max-width: 800px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 24px;
       border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
     h1 {
-      font-size: 1.5rem;
+      text-align: center;
       margin-bottom: 20px;
-      text-align: center;
-      color: #1a73e8;
+      color: #111827;
+      font-size: 1.5rem;
     }
-    .upload-section {
-      border: 2px dashed #4285f4;
+    .upload-box {
+      border: 2px dashed #9ca3af;
       border-radius: 8px;
-      padding: 20px;
+      padding: 24px;
       text-align: center;
-      background-color: #f8f9fa;
+      background-color: #f9fafb;
       cursor: pointer;
       margin-bottom: 20px;
     }
-    .upload-section:hover {
-      background-color: #e8f0fe;
+    .upload-box:hover { background-color: #f3f4f6; }
+    input[type="file"] { display: none; }
+    .status {
+      text-align: center;
+      font-weight: bold;
+      color: #2563eb;
+      margin-bottom: 15px;
+      min-height: 1.5em;
     }
-    input[type="file"] {
-      display: none;
-    }
-    .preview-img {
-      max-width: 100%;
-      max-height: 200px;
-      margin-top: 15px;
-      border-radius: 4px;
-      display: none;
+    #scoreCanvas {
+      background-color: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      padding: 10px;
     }
     .controls {
       display: flex;
-      gap: 10px;
       justify-content: center;
-      margin-bottom: 20px;
+      gap: 12px;
     }
     button {
       padding: 10px 20px;
       font-size: 1rem;
+      font-weight: 600;
       border: none;
       border-radius: 6px;
       cursor: pointer;
-      font-weight: bold;
-      transition: background-color 0.2s;
     }
-    .btn-primary {
-      background-color: #1a73e8;
-      color: white;
-    }
-    .btn-primary:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
-    }
-    .btn-danger {
-      background-color: #ea4335;
-      color: white;
-    }
-    .btn-danger:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
-    }
-    .status {
-      font-size: 0.9rem;
-      color: #666;
-      text-align: center;
-      margin-bottom: 15px;
-      min-height: 1.2em;
-    }
-    .notes-display {
-      background: #f1f3f4;
-      padding: 15px;
-      border-radius: 6px;
-      font-family: monospace;
-      font-size: 0.9rem;
-      word-break: break-all;
-    }
+    .btn-play { background-color: #10b981; color: white; }
+    .btn-play:disabled { background-color: #d1d5db; cursor: not-allowed; }
+    .btn-stop { background-color: #ef4444; color: white; }
+    .btn-stop:disabled { background-color: #d1d5db; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>楽譜読み込み & 演奏プレイヤー</h1>
-  
-  <div class="upload-section" onclick="document.getElementById('fileInput').click()">
-    <p>📄 楽譜画像（またはABC表記テキスト画像）をアップロード</p>
-    <small>（クリックして画像を選択）</small>
+  <h1>楽譜スキャナー & 五線譜プレイヤー</h1>
+
+  <!-- 写真アップロードエリア -->
+  <div class="upload-box" onclick="document.getElementById('fileInput').click()">
+    <p>📷 楽譜の写真を撮影・選択してアップロード</p>
     <input type="file" id="fileInput" accept="image/*">
-    <br>
-    <img id="preview" class="preview-img" alt="楽譜プレビュー">
   </div>
 
-  <div class="status" id="statusText">ファイルを待機中...</div>
+  <div class="status" id="statusText">写真を選択してください</div>
 
+  <!-- 五線譜描画領域 -->
+  <div id="scoreCanvas"></div>
+
+  <!-- 操作ボタン -->
   <div class="controls">
-    <button id="playBtn" class="btn-primary" disabled>▶ 再生</button>
-    <button id="stopBtn" class="btn-danger" disabled>■ 停止</button>
-  </div>
-
-  <div class="notes-display">
-    <strong>解析された音符データ:</strong>
-    <p id="parsedNotes">（画像を選択すると自動解析されます）</p>
+    <button id="playBtn" class="btn-play" disabled>▶ 再生</button>
+    <button id="stopBtn" class="btn-stop" disabled>■ 停止</button>
   </div>
 </div>
 
 <script>
   const fileInput = document.getElementById('fileInput');
-  const preview = document.getElementById('preview');
   const statusText = document.getElementById('statusText');
-  const parsedNotesText = document.getElementById('parsedNotes');
   const playBtn = document.getElementById('playBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const scoreContainer = document.getElementById('scoreCanvas');
 
-  let parsedSequence = [];
+  let parsedNotes = [];
   let synth = null;
-  let isPlaying = false;
 
-  // ファイル選択時処理
+  // 写真読み込み処理
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 画像プレビュー表示
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      preview.src = event.target.result;
-      preview.style.display = 'block';
-    };
-    reader.readAsDataURL(file);
-
-    statusText.innerText = "画像を解析中...";
+    statusText.innerText = "写真を解析中 (OCR)...";
     playBtn.disabled = true;
 
     try {
-      // Tesseract.js による簡易OCR（テキスト/文字解析例）
+      // Tesseract.js による画像解析
       const result = await Tesseract.recognize(file, 'eng');
       const text = result.data.text.toUpperCase();
       
-      // 画像から「C D E F G A B」などの音符文字を検出してデータ化する簡易ロジック
-      parsedSequence = parseTextToNotes(text);
+      // 画像テキストから音符文字を抽出
+      parsedNotes = extractNotesFromText(text);
 
-      if (parsedSequence.length === 0) {
-        // 画像から音符がうまく判定できなかった場合のフォールバック（デモ用デフォルトメロディ）
-        parsedSequence = [
-          { note: "C4", duration: "4n" },
-          { note: "E4", duration: "4n" },
-          { note: "G4", duration: "4n" },
-          { note: "C5", duration: "2n" }
+      // 音符が検出されない場合のフォールバック（サンプル音源）
+      if (parsedNotes.length === 0) {
+        parsedNotes = [
+          { key: "c/4", note: "C4", duration: "q" },
+          { key: "d/4", note: "D4", duration: "q" },
+          { key: "e/4", note: "E4", duration: "q" },
+          { key: "f/4", note: "F4", duration: "q" },
+          { key: "g/4", note: "G4", duration: "h" }
         ];
-        statusText.innerText = "画像の文字解析完了（デフォルトメロディを読み込みました）";
+        statusText.innerText = "文字解析完了（サンプルメロディを表示します）";
       } else {
-        statusText.innerText = "楽譜データの解析完了！";
+        statusText.innerText = "楽譜の読み込みが完了しました！";
       }
 
-      parsedNotesText.innerText = parsedSequence.map(n => `${n.note}(${n.duration})`).join(" -> ");
+      // 五線譜を描画
+      renderStaff(parsedNotes);
       playBtn.disabled = false;
 
     } catch (err) {
@@ -188,23 +154,51 @@
     }
   });
 
-  // テキストからの音符抽出処理（ABC表記等の文字判定デモ）
-  function parseTextToNotes(text) {
-    const validNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-    const sequence = [];
+  // テキストから音階データを作成
+  function extractNotesFromText(text) {
+    const map = { 'C': 'c/4', 'D': 'd/4', 'E': 'e/4', 'F': 'f/4', 'G': 'g/4', 'A': 'a/4', 'B': 'b/4' };
+    const notes = [];
 
     for (let char of text) {
-      if (validNotes.includes(char)) {
-        sequence.push({
+      if (map[char]) {
+        notes.push({
+          key: map[char],
           note: `${char}4`,
-          duration: "4n"
+          duration: "q" // 4分音符
         });
       }
     }
-    return sequence;
+    return notes;
   }
 
-  // 再生ボタン
+  // VexFlow を用いた五線譜描画処理
+  function renderStaff(notesData) {
+    scoreContainer.innerHTML = ""; // 初期化
+
+    const { Renderer, Stave, StaveNote, Formatter } = Vex.Flow;
+    const renderer = new Renderer(scoreContainer, Renderer.Backends.SVG);
+    renderer.resize(500, 150);
+    
+    const context = renderer.getContext();
+    const stave = new Stave(10, 20, 480);
+    
+    // ト音記号と4/4拍子を追加
+    stave.addClef("treble").addTimeSignature("4/4");
+    stave.setContext(context).draw();
+
+    // VexFlow用の音符オブジェクトを生成
+    const vexNotes = notesData.map(n => 
+      new StaveNote({
+        keys: [n.key],
+        duration: n.duration
+      })
+    );
+
+    // 音符を五線譜上に配置して描画
+    Formatter.FormatAndDraw(context, stave, vexNotes);
+  }
+
+  // 音源再生処理
   playBtn.addEventListener('click', async () => {
     await Tone.start();
     if (!synth) {
@@ -216,26 +210,27 @@
     statusText.innerText = "演奏中...";
 
     let now = Tone.now();
-    parsedSequence.forEach((item) => {
-      synth.triggerAttackRelease(item.note, item.duration, now);
-      now += Tone.Time(item.duration).toSeconds();
+    parsedNotes.forEach((item) => {
+      // 4分音符("q")を "4n" としてTone.jsで鳴らす
+      synth.triggerAttackRelease(item.note, "4n", now);
+      now += Tone.Time("4n").toSeconds();
     });
 
-    const totalTime = (now - Tone.now()) * 1000;
+    const durationMs = (now - Tone.now()) * 1000;
     setTimeout(() => {
-      resetPlayer();
-    }, totalTime);
+      stopAudio();
+    }, durationMs);
   });
 
-  // 停止ボタン
+  // 停止処理
   stopBtn.addEventListener('click', () => {
-    resetPlayer();
+    stopAudio();
   });
 
-  function resetPlayer() {
+  function stopAudio() {
     playBtn.disabled = false;
     stopBtn.disabled = true;
-    statusText.innerText = "再生停止";
+    statusText.innerText = "再生終了";
   }
 </script>
 </body>
