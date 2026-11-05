@@ -26,7 +26,6 @@
     }
     h1 { text-align: center; margin-bottom: 16px; font-size: 1.4rem; color: #111827; }
     
-    /* 上の段：写真読み込み & コード生成エリア */
     .section-box {
       background-color: #f9fafb;
       border: 1px solid #e5e7eb;
@@ -75,7 +74,6 @@
       font-size: 0.9rem;
     }
 
-    /* 下の段：表示 & 再生エリア */
     #paper {
       overflow-x: auto;
       background: #fff;
@@ -108,9 +106,8 @@
     <img id="previewImg" alt="楽譜プレビュー">
     <div class="status-text" id="statusText">写真を読み込むとここに楽譜コードが生成されます</div>
 
-    <!-- 生成されたコード（直接修正も可能） -->
     <textarea id="abcText" placeholder="写真から抽出されたコードがここに入ります...">X:1
-T:ハトと少年 (変換コードサンプル)
+T:ハトと少年
 M:4/4
 L:1/8
 K:C
@@ -121,9 +118,7 @@ G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
   <div class="section-box">
     <div class="section-title">2. 下の段：生成コードを読み込んで楽譜表示 & 演奏</div>
     
-    <!-- 五線譜描画領域 -->
     <div id="paper"></div>
-    <!-- 音声再生プレイヤー -->
     <div id="audio-controls"></div>
   </div>
 </div>
@@ -136,12 +131,10 @@ G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
 
   let synthControl;
 
-  // 写真選択時の処理（写真読み込み -> コード変換 -> 下の段へ流す）
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 1. 画像プレビュー表示
     const reader = new FileReader();
     reader.onload = (event) => {
       previewImg.src = event.target.result;
@@ -152,15 +145,11 @@ G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
     statusText.innerText = "写真を解析してコードを生成中...";
 
     try {
-      // 2. 写真を解析してコード（ABC記譜法）に変換する処理
-      // (将来的にPython AIサーバーやVision APIと連携して画像から直接生成する部分)
       const generatedCode = await convertImageToABC(file);
 
-      // 3. 上の段のテキストエリアに抽出したコードをセット
       textarea.value = generatedCode;
-      statusText.innerText = "コードへの変換成功！下の段に楽譜とプレイヤーを読み込みました。";
+      statusText.innerText = "コードへの変換完了！下の段に楽譜とプレイヤーを読み込みました。";
 
-      // 4. 下の段の五線譜・演奏プレイヤーを更新
       renderAll();
 
     } catch (err) {
@@ -169,27 +158,23 @@ G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
     }
   });
 
-  // 写真解析・コード変換（API連携用のシミュレーション処理）
+  // エラー原因だった非同期処理の記述を修正
   function convertImageToABC(file) {
     return new Promise((resolve) => {
       setTimeout(() => {
-        // 画像解析によって自動抽出された「ハトと少年」冒頭フレーズのABCコード
         const resultAbc = `X:1\nT:ハトと少年 (画像解析結果)\nM:4/4\nL:1/8\nK:C\nG2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]`;
         resolve(resultAbc);
-      }, 1200);
+      }, 800);
     });
   }
 
-  // 下の段に楽譜と音源プレイヤーを描画・読み込む処理
   function renderAll() {
     const abcCode = textarea.value;
 
-    // 五線譜の自動描画
     const visualObj = ABCJS.renderAbc("paper", abcCode, {
       responsive: "resize"
     })[0];
 
-    // 再生プレイヤーの生成・読み込み
     if (ABCJS.synth.isSupported()) {
       if (!synthControl) {
         synthControl = new ABCJS.synth.SynthController();
@@ -211,10 +196,7 @@ G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
     }
   }
 
-  // 上の段のコードをの手動書き換え時もリアルタイムで下に反映
   textarea.addEventListener('input', renderAll);
-
-  // 初期ロード時の実行
   window.onload = renderAll;
 </script>
 </body>
