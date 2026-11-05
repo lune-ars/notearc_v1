@@ -3,12 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>楽譜プレイヤー & スキャナー</title>
+  <title>楽譜作成エディター & プレイヤー</title>
   
-  <!-- 楽譜表示ライブラリ (OSMD) -->
-  <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.6/build/opensheetmusicdisplay.min.js"></script>
-  <!-- 音声再生ライブラリ (Tone.js) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <!-- ABCjs (文字から五線譜描画・音声再生を行う軽量ライブラリ) -->
+  <script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.2/dist/abcjs-basic-min.js"></script>
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -16,213 +14,162 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: #f3f4f6;
       color: #1f2937;
-      padding: 20px;
+      padding: 16px;
     }
     .container {
       max-width: 900px;
       margin: 0 auto;
       background: #ffffff;
-      padding: 24px;
+      padding: 20px;
       border-radius: 12px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    h1 { text-align: center; margin-bottom: 20px; color: #111827; font-size: 1.4rem; }
-    .upload-box {
-      border: 2px dashed #3b82f6;
+    h1 { text-align: center; margin-bottom: 16px; font-size: 1.4rem; color: #111827; }
+    
+    /* 上の段：作成エリア */
+    .editor-section {
+      background-color: #f9fafb;
+      border: 1px solid #e5e7eb;
       border-radius: 8px;
-      padding: 24px;
-      text-align: center;
-      background-color: #eff6ff;
-      cursor: pointer;
-      margin-bottom: 15px;
+      padding: 16px;
+      margin-bottom: 20px;
     }
-    .upload-box:hover { background-color: #dbeafe; }
-    input[type="file"] { display: none; }
-    .status {
-      text-align: center;
-      font-weight: bold;
-      color: #2563eb;
-      margin-bottom: 15px;
-      min-height: 1.5em;
-    }
-    #previewImg {
-      max-width: 100%;
-      max-height: 180px;
-      display: none;
-      margin: 0 auto 15px;
+    .editor-section h2 { font-size: 1rem; margin-bottom: 8px; color: #374151; }
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 1rem;
+      border: 1px solid #d1d5db;
       border-radius: 6px;
-      border: 1px solid #ddd;
+      resize: vertical;
     }
-    #osmdContainer {
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-group button {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      background-color: #e5e7eb;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-group button:hover { background-color: #d1d5db; }
+
+    /* 下の段：表示＆再生エリア */
+    .preview-section {
       background-color: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
-      min-height: 200px;
-      margin-bottom: 20px;
-      padding: 15px;
+      padding: 16px;
+    }
+    .preview-section h2 { font-size: 1rem; margin-bottom: 12px; color: #374151; }
+    #paper {
       overflow-x: auto;
-    }
-    .controls { display: flex; justify-content: center; gap: 12px; }
-    button {
-      padding: 10px 24px;
-      font-size: 1rem;
-      font-weight: 600;
-      border: none;
+      background: #fff;
+      padding: 10px;
+      border: 1px solid #f3f4f6;
       border-radius: 6px;
-      cursor: pointer;
+      min-height: 120px;
     }
-    .btn-play { background-color: #10b981; color: white; }
-    .btn-play:disabled { background-color: #d1d5db; cursor: not-allowed; }
-    .btn-stop { background-color: #ef4444; color: white; }
-    .btn-stop:disabled { background-color: #d1d5db; cursor: not-allowed; }
+    #audio-controls {
+      margin-top: 15px;
+      display: flex;
+      justify-content: center;
+    }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <h1>楽譜プレイヤー & スキャナー</h1>
+  <h1>🎼 楽譜作成エディター & プレイヤー</h1>
 
-  <!-- ファイル選択（画像またはMusicXML） -->
-  <div class="upload-box" onclick="document.getElementById('fileInput').click()">
-    <p>📁 楽譜の写真または MusicXMLファイルを選択</p>
-    <input type="file" id="fileInput" accept="image/*,.xml,.musicxml">
+  <!-- 【上の段】コード・楽譜作成エリア -->
+  <div class="editor-section">
+    <h2>1. 上の段：楽譜テキストを入力（コード作成）</h2>
+    <textarea id="abcText" placeholder="ここに楽譜コードを入力...">X:1
+T:ハトと少年 (冒頭)
+M:4/4
+L:1/8
+K:C
+G2 | c3 e d c | G4 z2 G2 | c3 e d c | G6 |]</textarea>
+
+    <!-- 簡単入力用ボタン -->
+    <div class="btn-group">
+      <button onclick="insertText('c')">ド(c)</button>
+      <button onclick="insertText('d')">レ(d)</button>
+      <button onclick="insertText('e')">ミ(e)</button>
+      <button onclick="insertText('f')">ファ(f)</button>
+      <button onclick="insertText('g')">ソ(g)</button>
+      <button onclick="insertText('a')">ラ(a)</button>
+      <button onclick="insertText('b')">シ(b)</button>
+      <button onclick="insertText('2')">長さを2倍</button>
+      <button onclick="insertText(' z ')">休符(z)</button>
+    </div>
   </div>
 
-  <img id="previewImg" alt="プレビュー画像">
-  <div class="status" id="statusText">ファイルを読み込んでください</div>
-
-  <!-- 五線譜描画エリア -->
-  <div id="osmdContainer"></div>
-
-  <!-- 演奏操作 -->
-  <div class="controls">
-    <button id="playBtn" class="btn-play" disabled>▶ 再生</button>
-    <button id="stopBtn" class="btn-stop" disabled>■ 停止</button>
+  <!-- 【下の段】表示＆演奏エリア -->
+  <div class="preview-section">
+    <h2>2. 下の段：自動生成された五線譜 & 演奏</h2>
+    <!-- リアルタイムで描画される五線譜 -->
+    <div id="paper"></div>
+    <!-- 自動生成される再生プレイヤー -->
+    <div id="audio-controls"></div>
   </div>
 </div>
 
 <script>
-  const fileInput = document.getElementById('fileInput');
-  const previewImg = document.getElementById('previewImg');
-  const statusText = document.getElementById('statusText');
-  const playBtn = document.getElementById('playBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const osmdContainer = document.getElementById('osmdContainer');
+  const textarea = document.getElementById('abcText');
 
-  let osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay("osmdContainer", {
-    autoResize: true,
-    drawTitle: true
-  });
-  let synth = null;
-  let currentMelody = [];
+  // 音声再生用の合成エンジン初期化
+  let synthControl;
 
-  // 「ハトと少年」のサンプル楽譜データ（MusicXML）
-  const sampleMusicXML = `<?xml version="1.0" encoding="UTF-8"?>
-  <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
-  <score-partwise version="3.1">
-    <part-list><score-part id="P1"><part-name>Trumpet</part-name></score-part></part-list>
-    <part id="P1">
-      <measure number="1">
-        <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
-        <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><type>eighth</type></note>
-        <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><type>quarter</type></note>
-        <note><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
-      </measure>
-      <measure number="2">
-        <note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
-        <note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
-        <note><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><type>half</type></note>
-      </measure>
-    </part>
-  </score-partwise>`;
+  function renderAll() {
+    const abcCode = textarea.value;
 
-  // サンプル用の音符データ（演奏用）
-  const sampleNotes = [
-    { note: "G4", duration: "8n" },
-    { note: "C5", duration: "4n" },
-    { note: "E5", duration: "8n" },
-    { note: "D5", duration: "8n" },
-    { note: "C5", duration: "8n" },
-    { note: "G4", duration: "2n" }
-  ];
+    // 1. 下の段に五線譜を描画
+    const visualObj = ABCJS.renderAbc("paper", abcCode, {
+      responsive: "resize"
+    })[0];
 
-  fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    // 2. 下の段に再生プレイヤーを生成
+    if (ABCJS.synth.isSupported()) {
+      if (!synthControl) {
+        synthControl = new ABCJS.synth.SynthController();
+      }
+      
+      synthControl.load("#audio-controls", null, {
+        displayRestart: true,
+        displayPlay: true,
+        displayProgress: true,
+        displayWarp: false
+      });
 
-    // 画像ファイルの場合のプレビュー表示
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        previewImg.src = event.target.result;
-        previewImg.style.display = 'block';
-      };
-      reader.readAsDataURL(file);
-      statusText.innerText = "写真を読み込みました（「ハトと少年」のサンプルを表示します）";
-    } else {
-      // MusicXMLファイルの場合の直接読み込み
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          await osmd.load(event.target.result);
-          osmd.render();
-          statusText.innerText = "MusicXMLファイルの読み込みが完了しました！";
-          playBtn.disabled = false;
-          return;
-        } catch(err) {
-          console.error(err);
-        }
-      };
-      reader.readAsText(file);
-      return;
+      const createSynth = new ABCJS.synth.CreateSynth();
+      createSynth.init({ visualObj: visualObj }).then(() => {
+        synthControl.setTune(visualObj, false).catch(err => {
+          console.warn("Audio load error:", err);
+        });
+      });
     }
-
-    // 写真が選ばれた場合はサンプル楽譜を展開
-    try {
-      await osmd.load(sampleMusicXML);
-      osmd.render();
-      currentMelody = sampleNotes;
-      playBtn.disabled = false;
-    } catch (err) {
-      statusText.innerText = "描画に失敗しました。";
-      console.error(err);
-    }
-  });
-
-  // 再生ボタン
-  playBtn.addEventListener('click', async () => {
-    await Tone.start();
-    if (!synth) {
-      synth = new Tone.Synth().toDestination();
-    }
-
-    playBtn.disabled = true;
-    stopBtn.disabled = false;
-    statusText.innerText = "演奏中...";
-
-    let now = Tone.now();
-    currentMelody.forEach((item) => {
-      synth.triggerAttackRelease(item.note, item.duration, now);
-      now += Tone.Time(item.duration).toSeconds();
-    });
-
-    const totalDuration = (now - Tone.now()) * 1000;
-    setTimeout(() => {
-      stopAudio();
-    }, totalDuration);
-  });
-
-  // 停止ボタン
-  stopBtn.addEventListener('click', () => {
-    stopAudio();
-  });
-
-  function stopAudio() {
-    if (synth) synth.triggerRelease();
-    playBtn.disabled = false;
-    stopBtn.disabled = true;
-    statusText.innerText = "再生終了";
   }
+
+  // ボタンを押してテキストを挿入する関数
+  function insertText(str) {
+    textarea.value += str;
+    renderAll();
+  }
+
+  // 入力エリアの文字が変わるたびにリアルタイム更新
+  textarea.addEventListener('input', renderAll);
+
+  // 初回読み込み時の描画
+  window.onload = renderAll;
 </script>
 </body>
 </html>
